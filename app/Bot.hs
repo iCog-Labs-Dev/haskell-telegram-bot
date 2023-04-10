@@ -1,0 +1,11 @@
+-- |
+-- Module      : Bot
+-- Description : contains representations and functions related to a telegram Bot.
+-- Copyright   : (c) Surafel firku, 2023
+-- License     : MIT
+-- Maintainer  : surafelfikru76@gmail.com
+-- Stability   : experimental
+-- Portability : POSIX
+--
+-- Here is a longer description of this module, containing some
+-- commentary with @some markup@.
