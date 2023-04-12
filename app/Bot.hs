@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 {-# HLINT ignore "Use lambda-case" #-}
@@ -16,18 +17,24 @@
 -- Here is a longer description of this module, containing some
 -- commentary with @some markup@.
 module Bot
-  ( Bot (telegramHost, tokenPrefix),
-    BotConfig (..),
+  ( Bot (..),
+    BotBuilder (..),
+    initBot,
+    withToken,
+    argValidator,
   )
 where
 
-import Control.Exception (try)
+-- import qualified Data.ByteString.Lazy.Char8 as L8
+
+-- import qualified Network.URI as URL
+
+import Control.Lens
 import qualified Data.Aeson as Aeson
-import qualified Data.ByteString.Lazy.Char8 as L8
 import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 import qualified Data.Vector as Vector
 import qualified Network.HTTP.Simple as Http
-import qualified Network.URI as URL
 import Update
 
 -- | a type representing a telegram Bot. it holds data such as:
@@ -38,32 +45,44 @@ import Update
 -- Note that you should not access this type directly but use the bot functino which uses
 -- the BotConfig type.
 data Bot = Bot
-  { telegramHost :: String,
-    tokenPrefix :: String,
-    token :: String
+  { botHost :: String,
+    botTokenPrefix :: String,
+    botToken :: String
   }
+  deriving (Show, Eq)
+
+makeLenses ''Bot
 
 {- a public type that mimics the Bot type without including private fields. you can use
 this type to construct a bot and pass it to the bot function.
     * @telegramHost@ - the base url for the telegram host
     * @token@ - a telegram bot token obtained from the bot father
 -}
-data BotConfig = BotConfig
-  { configTelegramHost :: String,
-    configToken :: String
+newtype BotBuilder = BotBuilder
+  { builderToken :: String
   }
+  deriving (Show, Eq)
 
 -- Functions
 
-bot :: BotConfig -> Bot
-bot BotConfig {..} =
+initBot :: BotBuilder
+initBot = BotBuilder ""
+
+withToken :: String -> BotBuilder -> BotBuilder
+withToken token builder = builder {builderToken = token}
+
+buildBot :: BotBuilder -> Bot
+buildBot builder =
   Bot
-    { telegramHost = configTelegramHost,
-      tokenPrefix = "bot",
-      token = configToken
+    { botHost = "https://api.telegram.org",
+      botTokenPrefix = "bot",
+      botToken = builderToken builder
     }
 
--- argValidator :: Args -> Map.Map String (Bool, Aeson.Value) -> Bool
+argValidator ::
+  Map.Map String Aeson.Value ->
+  Map.Map String (Bool, Aeson.Value) ->
+  Either BotError Bool
 argValidator args = Map.foldlWithKey validate (Right True)
   where
     validate :: Either BotError Bool -> String -> (Bool, Aeson.Value) -> Either BotError Bool
@@ -80,7 +99,7 @@ argValidator args = Map.foldlWithKey validate (Right True)
                 getType val = head $ words $ show val
 
 telegramEndpoint :: Bot -> String
-telegramEndpoint bt = telegramHost bt ++ "/" ++ tokenPrefix bt ++ token bt
+telegramEndpoint bt = botHost bt ++ "/" ++ botTokenPrefix bt ++ botToken bt
 
 appendMethod :: Bot -> String -> String
 appendMethod bt method = telegramEndpoint bt ++ "/" ++ method
@@ -128,8 +147,7 @@ postMethodWithFile = undefined
 --    @param allowed_updates An optional list of the update types you want your bot to receive.
 --
 -- Note that ths method will not work if a webhook is setup.
--- getUpdates :: Bot -> Args -> Either BotError (IO [Update])
-getUpdates :: Bot -> Args -> IO (Either BotError Aeson.Value)
+getUpdates :: Bot -> Map.Map String Aeson.Value -> IO (Either BotError [Update])
 getUpdates bt args =
   case isValid of
     Left err -> return $ Left err
@@ -138,7 +156,13 @@ getUpdates bt args =
        in postMethod bt method args
             >>= ( \a -> case a of
                     Left err -> return $ Left (HttpError (show err))
-                    Right ok -> return $ Right ok
+                    Right ok ->
+                      return $
+                        Right
+                          ( case ok of
+                              Aeson.Array a -> Vector.toList (Vector.map (fromMaybe (error "an invalid Update") . makeUpdate) a)
+                              _ -> error "An array should not come here"
+                          )
                 )
   where
     isValid =
