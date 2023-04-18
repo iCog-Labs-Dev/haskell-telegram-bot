@@ -22,6 +22,7 @@ module Bot
     initBot,
     withToken,
     argValidator,
+    BotError (..),
   )
 where
 
@@ -53,11 +54,10 @@ data Bot = Bot
 
 makeLenses ''Bot
 
-{- a public type that mimics the Bot type without including private fields. you can use
-this type to construct a bot and pass it to the bot function.
-    * @telegramHost@ - the base url for the telegram host
-    * @token@ - a telegram bot token obtained from the bot father
--}
+-- | a public type that mimics the Bot type without including private fields. you can use
+-- this type to construct a bot and pass it to the bot function.
+--    * @telegramHost@ - the base url for the telegram host
+--    * @token@ - a telegram bot token obtained from the bot father
 newtype BotBuilder = BotBuilder
   { builderToken :: String
   }
@@ -65,12 +65,15 @@ newtype BotBuilder = BotBuilder
 
 -- Functions
 
+-- | a BotBuilder constructor. returns the minimal form of BotBuilder
 initBot :: BotBuilder
 initBot = BotBuilder ""
 
+-- | a builder function for the BotBuilder type that adds a token
 withToken :: String -> BotBuilder -> BotBuilder
 withToken token builder = builder {builderToken = token}
 
+-- | the final call on a BotBuilder that returns a Bot
 buildBot :: BotBuilder -> Bot
 buildBot builder =
   Bot
@@ -79,9 +82,17 @@ buildBot builder =
       botToken = builderToken builder
     }
 
+-- | validates if a given argument is valid for a certain schema. this is used
+--  by telegram bot api method functions to ensure required arguments are present and
+--  check if all of the fields have valid types
+-- Note:
+--   * the validator does not care for additional keys put in args
 argValidator ::
+  -- | arguments that are going to be checked
   Map.Map String Aeson.Value ->
+  -- | schema used to validate the arguments
   Map.Map String (Bool, Aeson.Value) ->
+  -- | a safe Either type to tell if something is valid or not
   Either BotError Bool
 argValidator args = Map.foldlWithKey validate (Right True)
   where
@@ -222,12 +233,8 @@ type Args = Map.Map String Aeson.Value
 -- | Describes the current status of a webhook.
 data WebhookInfo = WebhookInfo
 
-data BotError = ArgumentRequiredError String | ArgumentTypeError String | HttpError String
-
-{-
-
-fmap  :: (a -> b) -> f a -> f b
-(<*>) :: f (a -> b) -> f a -> f b
-(>>=) :: m a -> (a -> m b) -> m b
-
--}
+data BotError
+  = ArgumentRequiredError String
+  | ArgumentTypeError String
+  | HttpError String
+  deriving (Show, Eq)

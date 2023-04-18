@@ -13,8 +13,13 @@ version:            0.1.0.0
 
 -- The license under which the package is released.
 -- license:
-author:             surafel_fikru
-maintainer:         surafelfikru76@gmail.com
+author:             surafel_fikru, yeabsira derese, kenenisa alemayehu, leul wujira, yeabsira nigusse
+maintainer:         surafelfikru76@gmail.com,
+                    yeabsira.derese@singularitynet.io,s
+                    kenenisa.Alemayehu@singularitynet.io,
+                    leul.wujira@singularitynet.io,
+                    yeabsira.nigusse@singularitynet.io,
+
 
 -- A copyright notice.
 -- copyright:
@@ -37,13 +42,17 @@ extra-source-files: CHANGELOG.md
 
 library
   exposed-modules: Update,
-                   Bot
+                   Bot,
+                   TelegramTypes,
+                   TestBot
   build-depends:    base ^>=4.16.4.0,
                     containers,
                     aeson,
                     vector,
                     network-uri,
                     http-conduit,
-                    bytestring
-  hs-source-dirs:   app
+                    bytestring,
+                    lens,
+                    HUnit
+  hs-source-dirs:   app, tests
   default-language: Haskell2010
