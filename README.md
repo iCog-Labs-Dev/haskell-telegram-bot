@@ -30,7 +30,7 @@ builder :: BotBuilder
 builder = initBot
 
 -- Add the token to the builder
-builderWithToken = BotBuilder
+builderWithToken :: BotBuilder
 builderWithToken = 
     withToken
         "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
