@@ -4,6 +4,7 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 {-# HLINT ignore "Use lambda-case" #-}
+{-# HLINT ignore "Use map" #-}
 
 -- |
 -- Module      : Bot
@@ -22,6 +23,8 @@ module Bot
     initBot,
     withToken,
     argValidator,
+    getUpdates,
+    buildBot,
     BotError (..),
   )
 where
@@ -32,8 +35,10 @@ where
 
 import Control.Lens
 import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.KeyMap as AesonKm
 import qualified Data.Map as Map
-import Data.Maybe (fromMaybe)
+import qualified Data.Maybe as Mb
+import qualified Data.Maybe as Mb.Maybe
 import qualified Data.Vector as Vector
 import qualified Network.HTTP.Simple as Http
 import Update
@@ -158,22 +163,32 @@ postMethodWithFile = undefined
 --    @param allowed_updates An optional list of the update types you want your bot to receive.
 --
 -- Note that ths method will not work if a webhook is setup.
-getUpdates :: Bot -> Map.Map String Aeson.Value -> IO (Either BotError [Update])
+getUpdates :: Bot -> Map.Map String Aeson.Value -> IO (Either BotError [Maybe Update])
 getUpdates bt args =
+  -- validate arguments
   case isValid of
     Left err -> return $ Left err
     Right True ->
+      -- if args validate correctly
       let method = "getUpdates"
        in postMethod bt method args
             >>= ( \a -> case a of
+                    -- validate response
                     Left err -> return $ Left (HttpError (show err))
                     Right ok ->
-                      return $
-                        Right
-                          ( case ok of
-                              Aeson.Array a -> Vector.toList (Vector.map (fromMaybe (error "an invalid Update") . makeUpdate) a)
-                              _ -> error "An array should not come here"
-                          )
+                      -- if response validates correctly
+                      let getKey :: AesonKm.Key -> Maybe Aeson.Value
+                          getKey k =
+                            case ok of
+                              Aeson.Object o -> AesonKm.lookup k o
+                       in if getKey "ok" == Just (Aeson.Bool True)
+                            then
+                              return $
+                                Right
+                                  ( case getKey "result" of
+                                      Just (Aeson.Array a) -> foldl (\acc a -> makeUpdate a : acc) [] a
+                                  )
+                            else return $ Left (TelegramError ("there is an issue with the telegram response object\nResponse: " ++ show ok))
                 )
   where
     isValid =
@@ -237,4 +252,5 @@ data BotError
   = ArgumentRequiredError String
   | ArgumentTypeError String
   | HttpError String
+  | TelegramError String
   deriving (Show, Eq)
