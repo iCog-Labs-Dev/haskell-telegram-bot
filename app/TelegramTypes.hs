@@ -8,6 +8,10 @@ import GHC.Generics (Generic)
 
 type Message = Aeson.Value
 
+type User = Aeson.Value
+
+type Chat = Aeson.Value
+
 type InlineQuery = Aeson.Value
 
 type ChosenInlineResult = Aeson.Value
@@ -25,6 +29,8 @@ type PollAnswer = Aeson.Value
 type ChatMemberUpdated = Aeson.Value
 
 type ChatJoinRequest = Aeson.Value
+
+type WebhookInfo = Aeson.Value
 
 -- instance FromJSON Message
 

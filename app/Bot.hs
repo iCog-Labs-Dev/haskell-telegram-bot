@@ -41,6 +41,7 @@ import qualified Data.Maybe as Mb
 import qualified Data.Maybe as Mb.Maybe
 import qualified Data.Vector as Vector
 import qualified Network.HTTP.Simple as Http
+import TelegramTypes
 import Update
 
 -- | a type representing a telegram Bot. it holds data such as:
@@ -68,6 +69,19 @@ newtype BotBuilder = BotBuilder
   }
   deriving (Show, Eq)
 
+-- | a type that represents and encapsulates all the arguments a function that is applied
+-- on a Bot can take. A value usually will not be an Object
+type Args = Map.Map String Aeson.Value
+
+type Validator = Map.Map String (Bool, Aeson.Value)
+
+data BotError
+  = ArgumentRequiredError String
+  | ArgumentTypeError String
+  | HttpError String
+  | TelegramError String
+  deriving (Show, Eq)
+
 -- Functions
 
 -- | a BotBuilder constructor. returns the minimal form of BotBuilder
@@ -86,33 +100,6 @@ buildBot builder =
       botTokenPrefix = "bot",
       botToken = builderToken builder
     }
-
--- | validates if a given argument is valid for a certain schema. this is used
---  by telegram bot api method functions to ensure required arguments are present and
---  check if all of the fields have valid types
--- Note:
---   * the validator does not care for additional keys put in args
-argValidator ::
-  -- | arguments that are going to be checked
-  Map.Map String Aeson.Value ->
-  -- | schema used to validate the arguments
-  Map.Map String (Bool, Aeson.Value) ->
-  -- | a safe Either type to tell if something is valid or not
-  Either BotError Bool
-argValidator args = Map.foldlWithKey validate (Right True)
-  where
-    validate :: Either BotError Bool -> String -> (Bool, Aeson.Value) -> Either BotError Bool
-    validate acc k v =
-      case acc of
-        Left (ArgumentRequiredError err) -> Left (ArgumentRequiredError err)
-        Left (ArgumentTypeError err) -> Left (ArgumentTypeError err)
-        _ ->
-          case Map.lookup k args of
-            Nothing -> if fst v then Left (ArgumentRequiredError (k ++ " is a required argument but not provided")) else acc
-            Just val -> if getType val /= getType (snd v) then Left (ArgumentTypeError ("argument should be of type '" ++ getType (snd v) ++ "' but it is set as '" ++ getType val)) else acc
-              where
-                getType :: Aeson.Value -> String
-                getType val = head $ words $ show val
 
 telegramEndpoint :: Bot -> String
 telegramEndpoint bt = botHost bt ++ "/" ++ botTokenPrefix bt ++ botToken bt
@@ -148,8 +135,67 @@ postMethod bt method args =
 postMethodWithFile :: Aeson.ToJSON j => Bot -> String -> Aeson.Value -> IO (Either String j)
 postMethodWithFile = undefined
 
+getKey :: Aeson.Value -> AesonKm.Key -> Maybe Aeson.Value
+getKey val k = case val of
+  Aeson.Object o -> AesonKm.lookup k o
+
+checkOkKey :: Aeson.Value -> Bool
+checkOkKey val = getKey val "ok" == Just (Aeson.Bool True)
+
+parseResult :: Aeson.FromJSON a => Either String Aeson.Value -> IO (Either BotError [Maybe a])
+parseResult a = case a of
+  Left err -> return $ Left (HttpError (show err))
+  Right ok ->
+    return $
+      if checkOkKey ok
+        then
+          Right
+            ( case getKey ok "result" of
+                Just (Aeson.Array a) -> foldl (\acc a -> (Aeson.decode . Aeson.encode) a : acc) [] a
+            )
+        else
+          Left
+            ( -- ISSUE: the display errors where the ok key is false could be better and more native
+              TelegramError ("there is an issue with the telegram response object\nResponse:\n" ++ show ok)
+            )
+
+-- | validates if a given argument is valid for a certain schema. this is used
+--  by telegram bot api method functions to ensure required arguments are present and
+--  check if all of the fields have valid types
+-- Note:
+--   * the validator does not care for additional keys put in args
+argValidator ::
+  -- | arguments that are going to be checked
+  Map.Map String Aeson.Value ->
+  -- | schema used to validate the arguments
+  Validator ->
+  -- | a safe Either type to tell if something is valid or not
+  Either BotError Bool
+argValidator args = Map.foldlWithKey validate (Right True)
+  where
+    validate :: Either BotError Bool -> String -> (Bool, Aeson.Value) -> Either BotError Bool
+    validate acc k v =
+      case acc of
+        Left (ArgumentRequiredError err) -> Left (ArgumentRequiredError err)
+        Left (ArgumentTypeError err) -> Left (ArgumentTypeError err)
+        _ ->
+          case Map.lookup k args of
+            Nothing -> if fst v then Left (ArgumentRequiredError (k ++ " is a required argument but not provided")) else acc
+            Just val -> if getType val /= getType (snd v) then Left (ArgumentTypeError ("argument should be of type '" ++ getType (snd v) ++ "' but it is set as '" ++ getType val)) else acc
+              where
+                getType :: Aeson.Value -> String
+                getType val = head $ words $ show val
+
+callMethod :: Aeson.FromJSON j => String -> Validator -> Bot -> Args -> IO (Either BotError [Maybe j])
+callMethod method validator bt args =
+  case isValid of
+    Left err -> return $ Left err
+    Right True -> postMethod bt method args >>= parseResult
+  where
+    isValid = argValidator args validator
+
 -- | a functions used to receive incoming updates using long polling. Returns an Array of
--- Update objects. gets its arguments through the Args type which are documented below
+-- Update objects. accepts parameters as listed below.
 --    @param offset An optional field that is an identifier of the first update to be returned.
 --    Must be greater by one than the highest among the identifiers of previously received updates.
 --    By default, updates starting with the earliest unconfirmed update are returned. it is possible
@@ -163,47 +209,31 @@ postMethodWithFile = undefined
 --    @param allowed_updates An optional list of the update types you want your bot to receive.
 --
 -- Note that ths method will not work if a webhook is setup.
-getUpdates :: Bot -> Map.Map String Aeson.Value -> IO (Either BotError [Maybe Update])
-getUpdates bt args =
-  -- validate arguments
-  case isValid of
-    Left err -> return $ Left err
-    Right True ->
-      -- if args validate correctly
-      let method = "getUpdates"
-       in postMethod bt method args
-            >>= ( \a -> case a of
-                    -- validate response
-                    Left err -> return $ Left (HttpError (show err))
-                    Right ok ->
-                      -- if response validates correctly
-                      let getKey :: AesonKm.Key -> Maybe Aeson.Value
-                          getKey k =
-                            case ok of
-                              Aeson.Object o -> AesonKm.lookup k o
-                       in if getKey "ok" == Just (Aeson.Bool True)
-                            then
-                              return $
-                                Right
-                                  ( case getKey "result" of
-                                      Just (Aeson.Array a) -> foldl (\acc a -> makeUpdate a : acc) [] a
-                                  )
-                            else return $ Left (TelegramError ("there is an issue with the telegram response object\nResponse: " ++ show ok))
-                )
-  where
-    isValid =
-      argValidator
-        args
-        ( Map.fromList
-            [ ("offset", (False, Aeson.String "")),
-              ("limit", (False, Aeson.Number 0)),
-              ("timeout", (False, Aeson.Number 0)),
-              ("allowed_updates", (False, Aeson.Array Vector.empty))
-            ]
-        )
+getUpdates :: Bot -> Args -> IO (Either BotError [Maybe Update])
+getUpdates =
+  callMethod
+    "getUpdates"
+    ( Map.fromList
+        [ ("offset", (False, Aeson.String "")),
+          ("limit", (False, Aeson.Number 0)),
+          ("timeout", (False, Aeson.Number 0)),
+          ("allowed_updates", (False, Aeson.Array Vector.empty))
+        ]
+    )
+
+-- | A simple method for testing your bot's authentication token. Requires no parameters.
+-- Returns basic information about the bot in form of a User object.
+getMe :: Bot -> IO (Either BotError [Maybe User])
+getMe bt =
+  callMethod "getMe" Map.empty bt Map.empty
+
+-- let method = "getMe"
+--  in postMethod bt method Aeson.Null
+--       >>= parseResult
 
 -- | a function used to to specify a URL and receive incoming updates via an outgoing webhook.
--- accepts parameters in the form of Args. the parameters are listed below.
+-- accepts parameters as listed below. Whenever there is an update for the bot, telegram will
+-- send an HTTPS POST request to the specified URL, containing a JSON-serialized Update
 --    @param url A required HTTPS URL to send updates to.
 --
 --    @param certificate An optional public key certificate so that the root certificate in use can be checked,
@@ -221,36 +251,34 @@ getUpdates bt args =
 --
 --    @param secret_token Allows you to add an additional layer of security to your webhook by verifying
 --    that the incoming requests are coming from Telegram.
-setWebhook :: Bot -> Args -> IO Bool
-setWebhook = undefined
+setWebhook :: Bot -> Args -> IO (Either BotError [Maybe Aeson.Value])
+setWebhook =
+  callMethod
+    "setWebhook"
+    ( Map.fromList
+        [ ("url", (True, Aeson.String "")),
+          ("certificate", (False, Aeson.Null)), -- ISSUE: does not valiadte against telegram types. In this case InputFile
+          ("ip_address", (False, Aeson.String "")),
+          ("max_connections", (False, Aeson.Number 0)),
+          ("allowed_updates", (False, Aeson.Array (Vector.singleton ""))), -- ISSUE: does not validate nested datastructres. In this case (Aeson.Array String)
+          ("drop_pending_updates", (False, Aeson.Bool True)),
+          ("secret_token", (False, Aeson.String ""))
+        ]
+    )
 
 -- | removes webhook integration. accepts args that has parameters depicted below.
 --    @param drop_pending_updates drops all pending updates.
-deleteWebhook :: Bot -> Args -> IO Bool
-deleteWebhook = undefined
+deleteWebhook :: Bot -> Args -> IO (Either BotError [Maybe Aeson.Value])
+deleteWebhook =
+  callMethod
+    "deleteWebhook"
+    ( Map.fromList
+        [ ("drop_pending_updates", (True, Aeson.Bool True))
+        ]
+    )
 
 -- | Used to get current webhook status. accepts no parameters.
-getWebhookInfo :: Bot -> WebhookInfo
-getWebhookInfo = undefined
-
-----------------
--- Type synonyms
-----------------
-
--- | a type that represents and encapsulates all the arguments a function that is applied
--- on a Bot can take. A value usually will not be an Object
-type Args = Map.Map String Aeson.Value
-
-------------------------------
--- Algebraic type declarations
-------------------------------
-
--- | Describes the current status of a webhook.
-data WebhookInfo = WebhookInfo
-
-data BotError
-  = ArgumentRequiredError String
-  | ArgumentTypeError String
-  | HttpError String
-  | TelegramError String
-  deriving (Show, Eq)
+-- getWebhookInfo :: Bot -> WebhookInfo
+getWebhookInfo :: Bot -> IO (Either BotError [Maybe WebhookInfo])
+getWebhookInfo bt =
+  callMethod "getWebhookInfo" Map.empty bt Map.empty
