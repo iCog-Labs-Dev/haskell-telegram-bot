@@ -75,6 +75,8 @@ type Args = Map.Map String Aeson.Value
 
 type Validator = Map.Map String (Bool, Aeson.Value)
 
+type Token = String
+
 data BotError
   = ArgumentRequiredError String
   | ArgumentTypeError String
@@ -100,6 +102,10 @@ buildBot builder =
       botTokenPrefix = "bot",
       botToken = builderToken builder
     }
+
+-- | Generate a bot from token
+getBot :: Token -> Bot
+getBot token = buildBot $ withToken token initBot
 
 telegramEndpoint :: Bot -> String
 telegramEndpoint bt = botHost bt ++ "/" ++ botTokenPrefix bt ++ botToken bt
