@@ -39,6 +39,7 @@ import qualified Data.Aeson.KeyMap as AesonKm
 import qualified Data.Map as Map
 import qualified Data.Maybe as Mb
 import qualified Data.Maybe as Mb.Maybe
+import qualified Data.Text as T
 import qualified Data.Vector as Vector
 import qualified Network.HTTP.Simple as Http
 import TelegramTypes
@@ -288,3 +289,15 @@ deleteWebhook =
 getWebhookInfo :: Bot -> IO (Either BotError [Maybe WebhookInfo])
 getWebhookInfo bt =
   callMethod "getWebhookInfo" Map.empty bt Map.empty
+
+-- | Send a simple text message using chat id and message text
+sendMessage :: Bot -> String -> Int -> IO (Either BotError [Maybe Aeson.Value])
+sendMessage bot message chatId =
+  callMethod
+    "sendMessage"
+    (Map.fromList [("chat_id", (True, Aeson.String "")),("text", (True, Aeson.String ""))])
+    bot
+    ( Map.fromList
+        [ ("chat_id", Aeson.String $ T.pack $ show chatId),
+          ("text", Aeson.String (T.pack message))
+        ])
