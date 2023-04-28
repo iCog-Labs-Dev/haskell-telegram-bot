@@ -291,13 +291,18 @@ getWebhookInfo bt =
   callMethod "getWebhookInfo" Map.empty bt Map.empty
 
 -- | Send a simple text message using chat id and message text
-sendMessage :: Bot -> String -> Int -> IO (Either BotError [Maybe Aeson.Value])
-sendMessage bot message chatId =
+sendMessage :: Bot -> Args -> IO (Either BotError [Maybe Aeson.Value])
+sendMessage =
   callMethod
     "sendMessage"
-    (Map.fromList [("chat_id", (True, Aeson.String "")),("text", (True, Aeson.String ""))])
-    bot
     ( Map.fromList
-        [ ("chat_id", Aeson.String $ T.pack $ show chatId),
-          ("text", Aeson.String (T.pack message))
-        ])
+        [ ("chat_id", (True, Aeson.String "")),
+          ("text", (True, Aeson.String "")),
+          ("parse_mode", (False, Aeson.String "")),
+          ("disable_web_page_preview", (False, Aeson.Bool False)),
+          ("disable_notification", (False, Aeson.Bool False)),
+          ("protect_content", (False, Aeson.Bool False)),
+          ("reply_to_message_id", (False, Aeson.Number 0)),
+          ("allow_sending_without_reply", (False, Aeson.Bool False))
+        ]
+    )
