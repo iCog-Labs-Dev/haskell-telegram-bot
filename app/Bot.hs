@@ -285,24 +285,41 @@ deleteWebhook =
     )
 
 -- | Used to get current webhook status. accepts no parameters.
--- getWebhookInfo :: Bot -> WebhookInfo
 getWebhookInfo :: Bot -> IO (Either BotError [Maybe WebhookInfo])
 getWebhookInfo bt =
   callMethod "getWebhookInfo" Map.empty bt Map.empty
 
--- | Send a simple text message using chat id and message text
+-- | Send a simple text message using chat id and message text.ccepts args that has parameters depicted below.
+--    @param chat_id Unique identifier for the target chat or username of the target channel.
+--    @param message_thread_id Unique identifier for the target message thread (topic)
+--    @param text Text of the message to be sent
+--    @param parse_mode Mode for parsing entities in the message text. 
+--    @param entities A JSON-serialized list of special entities that appear in message text
+--    @param disable_web_page_preview Disables link previews for links in this message.
+--    @param disable_notification Sends the message silently.
+--    @param protect_content Protects the contents of the sent message from forwarding and saving.
+--    @param reply_to_message_id If the message is a reply, ID of the original message.
+--    @param allow_sending_without_reply Pass True if the message should be sent even if
+--    the specified replied-to message is not found.
+--    @param reply_markup Pass Additional interface options. A JSON-serialized object for
+--    an inline keyboard, custom reply keyboard, instructions to remove reply keyboard 
+--    or to force a reply from the user.
+
 sendMessage :: Bot -> Args -> IO (Either BotError [Maybe Aeson.Value])
 sendMessage =
   callMethod
     "sendMessage"
     ( Map.fromList
         [ ("chat_id", (True, Aeson.String "")),
+          ("message_thread_id", (False, Aeson.Number 0)),
           ("text", (True, Aeson.String "")),
           ("parse_mode", (False, Aeson.String "")),
+          ("entities", (False, Aeson.Array Vector.empty))
           ("disable_web_page_preview", (False, Aeson.Bool False)),
           ("disable_notification", (False, Aeson.Bool False)),
           ("protect_content", (False, Aeson.Bool False)),
           ("reply_to_message_id", (False, Aeson.Number 0)),
-          ("allow_sending_without_reply", (False, Aeson.Bool False))
+          ("allow_sending_without_reply", (False, Aeson.Bool False)),
+          ("reply_markup", (True, Aeson.Null)) -- ISSUE: does not valiadte against telegram types. In this case InlineKeyBoardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove or ForceReply.
         ]
     )
